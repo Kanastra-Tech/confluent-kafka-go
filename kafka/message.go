@@ -118,7 +118,11 @@ func setupHeadersFromGlueMsg(msg *Message, gMsg *C.glue_msg_t) {
 }
 
 func (h *handle) newMessageFromGlueMsg(gMsg *C.glue_msg_t) (msg *Message) {
-	msg = &Message{}
+	if h.c != nil && h.c.usePerform {
+		msg = h.c.poolMessage.Get().(*Message)
+	} else {
+		msg = &Message{}
+	}
 
 	if gMsg.ts != -1 {
 		ts := int64(gMsg.ts)
@@ -143,12 +147,22 @@ func (h *handle) setupMessageFromC(msg *Message, cmsg *C.rd_kafka_message_t) {
 	}
 	msg.TopicPartition.Partition = int32(cmsg.partition)
 	if cmsg.payload != nil && h.msgFields.Value {
-		msg.Value = C.GoBytes(unsafe.Pointer(cmsg.payload), C.int(cmsg.len))
+		if h.c != nil && h.c.usePerform {
+			msg.Value = unsafe.Slice((*byte)(unsafe.Pointer(cmsg.payload)), int(cmsg.len))
+		} else {
+			msg.Value = C.GoBytes(unsafe.Pointer(cmsg.payload), C.int(cmsg.len))
+		}
 	}
 	if cmsg.key != nil && h.msgFields.Key {
 		msg.Key = C.GoBytes(unsafe.Pointer(cmsg.key), C.int(cmsg.key_len))
 	}
-	if h.msgFields.Headers {
+
+	useHeaders := h.msgFields.Headers
+	if h.c != nil && h.c.usePerform {
+		useHeaders = false
+	}
+
+	if useHeaders {
 		var gMsg C.glue_msg_t
 		gMsg.msg = cmsg
 		gMsg.want_hdrs = C.int8_t(1)

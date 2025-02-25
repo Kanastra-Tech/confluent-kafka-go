@@ -19,6 +19,7 @@ package kafka
 import (
 	"fmt"
 	"math"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -48,9 +49,17 @@ type Consumer struct {
 	rebalanceCb        RebalanceCb
 	appReassigned      bool
 	appRebalanceEnable bool // SerializerConfig setting
+	poolMessage        sync.Pool
+	usePerform         bool
 
 	isClosed  uint32
 	isClosing uint32
+}
+
+func (c *Consumer) PutMessagePool(m *Message) {
+	m.Value = nil
+	m.TopicPartition = TopicPartition{}
+	c.poolMessage.Put(m)
 }
 
 // IsClosed returns boolean representing if client is closed or not
@@ -628,6 +637,12 @@ func NewConsumer(conf *ConfigMap) (*Consumer, error) {
 	}
 	eventsChanSize := v.(int)
 
+	v, err = confCopy.extract("go.consumer.performance", true)
+	if err != nil {
+		return nil, err
+	}
+	c.usePerform = v.(bool)
+
 	logsChanEnable, logsChan, err := confCopy.extractLogConfig()
 	if err != nil {
 		return nil, err
@@ -670,6 +685,12 @@ func NewConsumer(conf *ConfigMap) (*Consumer, error) {
 			consumerReader(c, c.readerTermChan)
 			c.handle.waitGroup.Done()
 		}()
+	}
+
+	c.poolMessage = sync.Pool{
+		New: func() interface{} {
+			return &Message{}
+		},
 	}
 
 	return c, nil

@@ -148,6 +148,13 @@ type Producer struct {
 
 	// checks if Producer has been closed or not.
 	isClosed uint32
+
+	// deliveryReportOnlyError is set to true if delivery.report.only.error=true
+	deliveryReportOnlyError bool
+}
+
+func (p *Producer) DeliveryReportOnlyError() bool {
+	return p.deliveryReportOnlyError
 }
 
 // IsClosed returns boolean representing if client is closed or not
@@ -545,6 +552,12 @@ func NewProducer(conf *ConfigMap) (*Producer, error) {
 		return nil, err
 	}
 	produceChannelSize := v.(int)
+
+	v, err = confCopy.extract("go.delivery.report.only.error", true)
+	if err != nil {
+		return nil, err
+	}
+	p.deliveryReportOnlyError = v.(bool)
 
 	logsChanEnable, logsChan, err := confCopy.extractLogConfig()
 	if err != nil {

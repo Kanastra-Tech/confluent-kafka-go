@@ -157,6 +157,11 @@ func (h *handle) eventPoll(channel chan Event, timeoutMs int, maxEvents int, ter
 
 	var retval Event
 
+	deliveryOnlyError := true
+	if h.p != nil {
+		deliveryOnlyError = h.p.DeliveryReportOnlyError()
+	}
+
 	if channel == nil {
 		maxEvents = 1
 	}
@@ -164,7 +169,9 @@ out:
 	for evcnt := 0; evcnt < maxEvents; evcnt++ {
 		var evtype C.rd_kafka_event_type_t
 		var gMsg C.glue_msg_t
-		gMsg.want_hdrs = C.int8_t(bool2cint(h.msgFields.Headers))
+		if h.c != nil && h.c.usePerform != true {
+			gMsg.want_hdrs = C.int8_t(bool2cint(h.msgFields.Headers))
+		}
 		rkev := C._rk_queue_poll(h.rkq, C.int(timeoutMs), &evtype, &gMsg, prevRkev)
 		prevRkev = rkev
 		timeoutMs = 0
@@ -176,6 +183,9 @@ out:
 			// Consumer fetch event, new message.
 			// Extracted into temporary gMsg for optimization
 			retval = h.newMessageFromGlueMsg(&gMsg)
+			if h.c != nil && h.c.usePerform {
+				return retval, term
+			}
 
 		case C.RD_KAFKA_EVENT_REBALANCE:
 			// Consumer rebalance event
@@ -245,6 +255,11 @@ out:
 
 				if ch == nil && h.fwdDr {
 					ch = &channel
+				}
+
+				if deliveryOnlyError && msg.TopicPartition.Error == nil {
+					retval = msg
+					break out
 				}
 
 				if ch != nil {
