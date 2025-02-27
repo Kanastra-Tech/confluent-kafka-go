@@ -539,6 +539,10 @@ func (c *Consumer) ReadMessage(timeout time.Duration) (*Message, error) {
 // The object is no longer usable after this call.
 func (c *Consumer) Close() (err error) {
 	// Check if the client is already closed.
+	if c.isClosed != 0 || c.isClosing != 0 {
+		return nil
+	}
+
 	err = c.verifyClient()
 	if err != nil {
 		return err
@@ -571,7 +575,9 @@ func (c *Consumer) Close() (err error) {
 
 	c.handle.cleanup()
 
-	C.rd_kafka_destroy(c.handle.rk)
+	if c.usePerform == false {
+		C.rd_kafka_destroy(c.handle.rk)
+	}
 
 	return nil
 }
